@@ -1,0 +1,44 @@
+%-----Author: Shaobo
+%-----Time:    20220918
+%-----Usage:  Initialization
+clc;clear;close all; warning off;
+%% 加载初始化数据
+AirCraftData;
+% 配平
+mass= 54000;
+Vt    =  80;
+alt    = 1284.73; % 九寨黄龙机场RNP AR测试
+Initi_Lati        = 32.6261;
+Initi_Longi     = 103.5940;%九寨黄龙机场RNP AR测试
+Initi_Longi     = 103.58;
+0;
+Initi_Heading = 15.95*pi/180; %九寨黄龙机场RNP AR测试
+% 配平模型
+AircraftTrim;
+% 加载RNP AR计划
+Manuscript_RNPAR_FlightPlan;
+% 仅在源文件更新或目标文件缺失时重新编译MEX，避免重复编译导致锁文件报错
+src_mex = 'Angle_chi.c';
+mex_ext = ['.' mexext];
+out_mex = ['Angle_chi' mex_ext];
+need_build = ~exist(out_mex, 'file');
+if ~need_build
+	src_info = dir(src_mex);
+	out_info = dir(out_mex);
+	need_build = src_info.datenum > out_info.datenum;
+end
+if need_build
+	clear('Angle_chi');
+	try
+		mex(src_mex);
+	catch ME
+		error(['MEX编译失败。可能是文件被其他MATLAB进程占用，请关闭其他MATLAB后重试。' newline ...
+			   '原始错误: ' ME.message]);
+	end
+end
+%% 风场信息
+wind_type        = 1;%1，无风；2，常值风；3，风切变；4，大气紊流
+wind_direction = 0;  %常值风风向，这里指风的来向，如0°表示北风，90°表示东风
+wind_speed     = 0; %常值风风速
+%% 
+disp('已完成初始化设置，请打开模型开始仿真....');
