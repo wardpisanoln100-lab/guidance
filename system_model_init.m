@@ -9,9 +9,9 @@ sys_model.rad2deg = 180 / pi;
 
 % 论文中指导律相关参数
 sys_model.k = 0.002;
-sys_model.ks = 0.002;
-sys_model.k_omega = 0.0005;
-sys_model.gamma = 12000;
+sys_model.ks = 0.02;
+sys_model.k_omega = 0.05;
+sys_model.gamma = 1200000;
 sys_model.chi_inf = pi/2;
 
 % 飞行计划

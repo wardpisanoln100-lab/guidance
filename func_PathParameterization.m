@@ -1,4 +1,4 @@
-unction leg_params = func_PathParameterization(flight_plan, leg_index)
+function leg_params = func_PathParameterization(flight_plan, leg_index)
 % TF/RF 飞行计划结构的路径参数化
 % 将 Y-8 飞行计划格式转换为适用于虚拟目标路径跟踪的参数。
 %
