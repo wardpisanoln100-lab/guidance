@@ -192,7 +192,7 @@ if leg_type == 2
         leg_length = leg_data(1);
         local_s = min(max(local_s, 0), leg_length);
 
-        q = func_GreatCincleForward(start_lat, start_lon, leg_bearing, local_s);
+        q = func_GreatCircleForward(start_lat, start_lon, leg_bearing, local_s);
         q_lat = q(1);
         q_lon = q(2);
         chi_f = wrapTo2Pi(leg_bearing * deg2rad);
@@ -210,7 +210,7 @@ if leg_type == 2
     delta_angle_deg = turn_dir * (local_s / radius) * rad2deg;
     bearing_c2q = wrapTo360Deg(bearing_c2s + delta_angle_deg);
 
-    q = func_GreatCincleForward(center_lat, center_lon, bearing_c2q, radius);
+    q = func_GreatCircleForward(center_lat, center_lon, bearing_c2q, radius);
     q_lat = q(1);
     q_lon = q(2);
     chi_f = wrapTo2Pi(bearing_c2q * deg2rad + turn_dir * pi / 2);
@@ -223,7 +223,7 @@ leg_bearing = leg_data(2);
 leg_length = leg_data(1);
 local_s = min(max(local_s, 0), leg_length);
 
-q = func_GreatCincleForward(start_lat, start_lon, leg_bearing, local_s);
+q = func_GreatCircleForward(start_lat, start_lon, leg_bearing, local_s);
 q_lat = q(1);
 q_lon = q(2);
 chi_f = wrapTo2Pi(leg_bearing * deg2rad);

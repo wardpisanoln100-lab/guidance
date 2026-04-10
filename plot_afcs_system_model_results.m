@@ -355,7 +355,7 @@ s_samples = linspace(0, leg_length, num_points);
 point_tf = zeros(num_points, 2);
 
 for idx = 1:num_points
-    pt = func_GreatCincleForward(start_lat, start_lon, leg_bearing, s_samples(idx));
+    pt = func_GreatCircleForward(start_lat, start_lon, leg_bearing, s_samples(idx));
     point_tf(idx, :) = pt;
 end
 end
@@ -375,16 +375,16 @@ if flight_plan(i,5) > 0
     if final_angle > 360
         for k = leg_c2s(2):0.2:360
             record = record + 1;
-            point_arc(record,:) = func_GreatCincleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
+            point_arc(record,:) = func_GreatCircleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
         end
         for k = 0:0.2:leg_c2e(2)
             record = record + 1;
-            point_arc(record,:) = func_GreatCincleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
+            point_arc(record,:) = func_GreatCircleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
         end
     else
         for k = leg_c2s(2):0.2:leg_c2e(2)
             record = record + 1;
-            point_arc(record,:) = func_GreatCincleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
+            point_arc(record,:) = func_GreatCircleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
         end
     end
 else
@@ -392,16 +392,16 @@ else
     if final_angle < 0
         for k = leg_c2e(2):0.2:360
             record = record + 1;
-            point_arc(record,:) = func_GreatCincleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
+            point_arc(record,:) = func_GreatCircleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
         end
         for k = 0:0.2:leg_c2s(2)
             record = record + 1;
-            point_arc(record,:) = func_GreatCincleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
+            point_arc(record,:) = func_GreatCircleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
         end
     else
         for k = leg_c2e(2):0.2:leg_c2s(2)
             record = record + 1;
-            point_arc(record,:) = func_GreatCincleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
+            point_arc(record,:) = func_GreatCircleForward(flight_plan(i,7), flight_plan(i,8), k, flight_plan(i,6)); %#ok<AGROW>
         end
     end
 end

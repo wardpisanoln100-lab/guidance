@@ -584,7 +584,7 @@ theta = s / R
 #### 第五步：根据圆心、方位角、半径求虚拟目标位置
 
 ```matlab
-q = func_GreatCincleForward(center_lat, center_lon, bearing_c2q, radius);
+q = func_GreatCircleForward(center_lat, center_lon, bearing_c2q, radius);
 q_lat = q(1);
 q_lon = q(2);
 ```
@@ -614,7 +614,7 @@ leg_bearing = leg_data(2);
 leg_length = leg_data(1);
 local_s = min(max(local_s, 0), leg_length);
 
-q = func_GreatCincleForward(start_lat, start_lon, leg_bearing, local_s);
+q = func_GreatCircleForward(start_lat, start_lon, leg_bearing, local_s);
 q_lat = q(1);
 q_lon = q(2);
 chi_f = wrapTo2Pi(leg_bearing * deg2rad);

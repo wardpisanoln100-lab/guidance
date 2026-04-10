@@ -349,7 +349,7 @@ end
 %% 大圆航线正解函数
 %输入：航段起点纬度、经度，航段方位角、航段长度
 %输出：航段终点纬度、经度
-function out=func_GreatCincleForward(StartLati,StartLongi,Bearing,LegLength)
+function out=func_GreatCircleForward(StartLati,StartLongi,Bearing,LegLength)
     RNG = LegLength / 6378140;
 	Bearing = Bearing / (180/pi);
 	StartLati = StartLati / (180/pi);
