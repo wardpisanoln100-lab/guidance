@@ -10,6 +10,7 @@ Vt    =  80;
 alt    = 1284.73; % 九寨黄龙机场RNP AR测试
 Initi_Lati        = 32.6261;
 Initi_Longi     = 103.5940;%九寨黄龙机场RNP AR测试
+Initi_Longi     = 103.5940;
 Initi_Heading = 15.95*pi/180; %九寨黄龙机场RNP AR测试
 % 配平模型
 AircraftTrim;

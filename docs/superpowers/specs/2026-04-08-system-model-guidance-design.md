@@ -95,9 +95,9 @@ eχ_dot = ω - κ(s) * s_dot
 
 ```matlab
 function delta = compute_approach_angle(ed, k, chi_inf)
-% δ(ed) = -χ∞ * (2/(e^(2*k*ed) + 1) - 1)
+% δ(ed) = -χ∞ * (e^(2*k*ed) - 1)/(e^(2*k*ed) + 1)
 % 这是一个单调递减的奇函数
-delta = -chi_inf * (2./(exp(2*k*ed) + 1) - 1);
+delta = -chi_inf * (exp(2*k*ed) - 1) ./ (exp(2*k*ed) + 1);
 ```
 
 **参数**:
