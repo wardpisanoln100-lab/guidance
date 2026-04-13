@@ -42,6 +42,19 @@ time_vec = time_vec(1:num_samples);
 q_step = hypot(diff(q_lat), diff(q_lon));
 q_is_moving = any(q_step > 1e-10);
 
+% --- compute screen-center figure position ---
+screen_pos = get(0, 'ScreenSize');
+fig_width  = 1600;
+fig_height = 900;
+fig_x = round((screen_pos(3) - fig_width) / 2);
+fig_y = round((screen_pos(4) - fig_height) / 2);
+
+% --- common style helper ---
+style_color = [0.2 0.4 0.8];   % muted blue for primary lines
+err_color   = [0.85 0.3 0.2];  % warm red for error curves
+geo_color1  = [0.15 0.55 0.35]; % teal for geometry
+geo_color2  = [0.6 0.35 0.7];  % purple for secondary geometry
+
 fprintf('===== AFCS + System Model 检查结果 =====\n');
 fprintf('样本数: %d\n', num_samples);
 fprintf('q(s) 是否发生移动: %d\n', q_is_moving);
@@ -51,7 +64,7 @@ fprintf('max|echi| = %.6f rad\n', max(abs(echi)));
 fprintf('最终 leg_index = %d\n', round(leg_index(end)));
 fprintf('最终 s = %.2f m\n', s(end));
 
-figure('Name', 'AFCS Horizontal Geometry');
+figure('Name', 'AFCS Horizontal Geometry', 'Position', [fig_x fig_y fig_width fig_height]);
 hold on
 
 h_wp = plot(flight_plan(1,3), flight_plan(1,2), 'pentagram', ...
@@ -116,50 +129,100 @@ legend_handles(end+1) = h_q;
 legend_text{end+1} = 'virtual target q(s)';
 legend(legend_handles, legend_text, 'FontSize', Font_size, 'FontName', Font_name);
 
-figure('Name', 'AFCS System Model Monitor', 'Position', [120 100 1280 820]);
+figure('Name', 'AFCS System Model Monitor', 'Position', [fig_x fig_y fig_width fig_height]);
 
-subplot(2,2,1);
+% --- apply consistent axis styling ---
+function apply_style(ax, title_str, xlbl, ylbl)
+    ax.FontName = 'Times New Roman';
+    ax.FontSize = 12;
+    ax.LineWidth = 1;
+    ax.GridAlpha = 0.2;
+    ax.GridLineStyle = '--';
+    title(ax, title_str, 'FontWeight', 'bold', 'FontSize', 13, 'FontName', 'Times New Roman');
+    xlabel(ax, xlbl, 'FontName', 'Times New Roman');
+    ylabel(ax, ylbl, 'FontName', 'Times New Roman');
+end
+
+%% subplot layout: 2 rows x 5 cols = 10 subplots
+% Col 1: trajectory map
+% Col 2: es error
+% Col 3: ed error
+% Col 4: echi error
+% Col 5: s (path coordinate)
+% Row 2: s_dot, leg_index, chi_f, kappa (empty last slot)
+
+subplot(2,5,1);
 hold on; grid on;
 plot_reference_path_only(flight_plan);
 if has_plane_track
-    plot(plane_lon, plane_lat, 'r-', 'LineWidth', 1.8, 'DisplayName', '飞机轨迹');
+    h_plane = plot(plane_lon, plane_lat, 'r-', 'LineWidth', 2, 'DisplayName', '飞机轨迹');
+else
+    h_plane = [];
 end
-plot(q_lon(1:q_plot_step:end), q_lat(1:q_plot_step:end), 'g^', ...
-    'LineStyle', 'none', 'MarkerSize', 4.5, 'MarkerFaceColor', 'g', ...
+h_q = plot(q_lon(1:q_plot_step:end), q_lat(1:q_plot_step:end), 'g^', ...
+    'LineStyle', 'none', 'MarkerSize', 5, 'MarkerFaceColor', 'g', ...
     'DisplayName', '虚拟目标 q(s)');
-xlabel('经度 (deg)');
-ylabel('纬度 (deg)');
-title('经纬度轨迹图');
-legend('Location', 'best');
+% 创建一个不可见的代理 line 用于 legend（避免 plot_reference_path_only 产生多条条目）
+h_ref_proxy = plot(NaN, NaN, 'b-', 'LineWidth', 2.2, 'DisplayName', '参考路径');
+apply_style(gca, '经纬度轨迹图', '经度 (°)', '纬度 (°)');
 
-subplot(2,2,2);
-hold on; grid on;
-plot(time_vec, es, 'b-', 'LineWidth', 1.5, 'DisplayName', 'es (m)');
-plot(time_vec, ed, 'r-', 'LineWidth', 1.5, 'DisplayName', 'ed (m)');
-plot(time_vec, echi, 'k-', 'LineWidth', 1.5, 'DisplayName', 'echi (rad)');
-plot(time_vec, s_dot, 'm--', 'LineWidth', 1.2, 'DisplayName', 's\_dot (m/s)');
-xlabel('时间 (s)');
-ylabel('误差 / 变化率');
-title('误差状态');
-legend('Location', 'best');
+leg_handles = [h_ref_proxy, h_q];
+leg_labels = {'参考路径', '虚拟目标 q(s)'};
+if ~isempty(h_plane)
+    leg_handles = [h_ref_proxy, h_plane, h_q];
+    leg_labels = {'参考路径', '飞机轨迹', '虚拟目标 q(s)'};
+end
+legend(leg_handles, leg_labels, ...
+    'Location', 'best', 'FontSize', 10, 'FontName', 'Times New Roman');
 
-subplot(2,2,3);
+% --- error plots: each separate ---
+subplot(2,5,2);
 hold on; grid on;
-plot(time_vec, s, 'b-', 'LineWidth', 1.5, 'DisplayName', 's (m)');
-stairs(time_vec, leg_index, 'r-', 'LineWidth', 1.2, 'DisplayName', 'leg index');
-xlabel('时间 (s)');
-ylabel('路径坐标 / 航段');
-title('虚拟目标推进状态');
-legend('Location', 'best');
+plot(time_vec, es, 'Color', style_color, 'LineWidth', 1.8);
+plot([min(time_vec), max(time_vec)], [0, 0], 'k--', 'LineWidth', 0.8);
+apply_style(gca, '横向跟踪误差', '时间 (s)', 'es (m)');
 
-subplot(2,2,4);
+subplot(2,5,3);
 hold on; grid on;
-plot(time_vec, chi_f, 'b-', 'LineWidth', 1.5, 'DisplayName', 'chi\_f (rad)');
-plot(time_vec, kappa, 'r-', 'LineWidth', 1.5, 'DisplayName', 'kappa (1/m)');
-xlabel('时间 (s)');
-ylabel('几何量');
-title('路径切向角与曲率');
-legend('Location', 'best');
+plot(time_vec, ed, 'Color', err_color, 'LineWidth', 1.8);
+plot([min(time_vec), max(time_vec)], [0, 0], 'k--', 'LineWidth', 0.8);
+apply_style(gca, '纵向跟踪误差', '时间 (s)', 'ed (m)');
+
+subplot(2,5,4);
+hold on; grid on;
+plot(time_vec, echi, 'Color', [0.2 0.2 0.2], 'LineWidth', 1.8);
+plot([min(time_vec), max(time_vec)], [0, 0], 'k--', 'LineWidth', 0.8);
+apply_style(gca, '航向跟踪误差', '时间 (s)', 'echi (rad)');
+
+% --- progress variables: each separate (different scales) ---
+subplot(2,5,5);
+hold on; grid on;
+plot(time_vec, s, 'Color', style_color, 'LineWidth', 1.8);
+apply_style(gca, '路径累积坐标', '时间 (s)', 's (m)');
+
+subplot(2,5,6);
+hold on; grid on;
+plot(time_vec, s_dot, 'Color', geo_color2, 'LineWidth', 1.8);
+plot([min(time_vec), max(time_vec)], [0, 0], 'k--', 'LineWidth', 0.8);
+apply_style(gca, '推进速率', '时间 (s)', 's\_dot (m/s)');
+
+subplot(2,5,7);
+hold on; grid on;
+stairs(time_vec, leg_index, 'Color', err_color, 'LineWidth', 1.8);
+apply_style(gca, '航段索引', '时间 (s)', 'leg\_index');
+yticks(sort(unique(round(leg_index))));
+
+% --- geometry: each separate ---
+subplot(2,5,8);
+hold on; grid on;
+plot(time_vec, chi_f, 'Color', geo_color1, 'LineWidth', 1.8);
+apply_style(gca, '路径切向角', '时间 (s)', 'chi\_f (rad)');
+
+subplot(2,5,9);
+hold on; grid on;
+plot(time_vec, kappa, 'Color', geo_color2, 'LineWidth', 1.8);
+plot([min(time_vec), max(time_vec)], [0, 0], 'k--', 'LineWidth', 0.8);
+apply_style(gca, '路径曲率', '时间 (s)', 'kappa (1/m)');
 
 end
 
@@ -411,12 +474,10 @@ function plot_reference_path_only(flight_plan)
 for i = 2:size(flight_plan,1)
     if flight_plan(i,1) < 1.5
         point_tf = build_tf_leg_points(flight_plan, i);
-        plot(point_tf(:,2), point_tf(:,1), ...
-             'b', 'LineWidth', 2.2, 'DisplayName', '参考路径');
+        plot(point_tf(:,2), point_tf(:,1), 'b', 'LineWidth', 2.2);
     else
         point_arc = build_rf_arc_points(flight_plan, i);
-        plot(point_arc(:,2), point_arc(:,1), ...
-             'b', 'LineWidth', 2.2, 'DisplayName', '参考路径');
+        plot(point_arc(:,2), point_arc(:,1), 'b', 'LineWidth', 2.2);
     end
 end
 end
