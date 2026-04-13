@@ -35,7 +35,7 @@ if need_build
 	end
 end
 %% 风场信息
-wind_type        = 1;%1，无风；2，常值风；3，风切变；4，大气紊流
+wind_type        = 2;%1，无风；2，常值风；3，风切变；4，大气紊流
 wind_direction = 0;  %常值风风向，这里指风的来向，如0°表示北风，90°表示东风
 wind_speed     = 0; %常值风风速
 %% 

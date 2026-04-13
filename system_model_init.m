@@ -9,10 +9,15 @@ sys_model.rad2deg = 180 / pi;
 
 % 论文中指导律相关参数
 sys_model.k = 0.002;
-sys_model.ks = 0.002;
-sys_model.k_omega = 0.1;
-sys_model.gamma = 1200000;
+sys_model.ks = 0.2;
+sys_model.k_omega = 0.12;
+sys_model.gamma = 1000000;
 sys_model.chi_inf = pi/2;
+
+% 反步法与自适应参数 (论文 Eq.11, Eq.24)
+sys_model.k_e = 0.1;            % 航向角速度误差增益 (Eq.11 中的 k_e > 0)
+sys_model.k_a = 0.001;           % 自适应增益 (Eq.24 中的 k_a > 0)
+sys_model.lambda_phi_hat = 0.05; % 滚转时间常数初始估计值 (秒)
 
 % 飞行计划
 sys_model.flight_plan = flight_plan;

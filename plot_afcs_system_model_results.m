@@ -11,12 +11,14 @@ if ~base_var_exists('RNPAR_FlightPlan')
 end
 
 flight_plan = evalin('base', 'RNPAR_FlightPlan');
-[q_lat, q_lon, es, ed, echi, s, leg_index, chi_f, kappa, s_dot] = get_monitor_outputs();
+[q_lat, q_lon, es, ed, echi, s, leg_index, chi_f, kappa, s_dot, ...
+    omega_d, phi_c, lambda_phi_hat, omega_e] = get_monitor_outputs();
 [plane_lat, plane_lon, has_plane_track] = get_plane_track();
 
 num_samples = min([ ...
     numel(q_lat), numel(q_lon), numel(es), numel(ed), numel(echi), ...
-    numel(s), numel(leg_index), numel(chi_f), numel(kappa), numel(s_dot)]);
+    numel(s), numel(leg_index), numel(chi_f), numel(kappa), numel(s_dot), ...
+    numel(omega_d), numel(phi_c), numel(lambda_phi_hat), numel(omega_e)]);
 
 if has_plane_track
     num_samples = min(num_samples, numel(plane_lat));
@@ -34,7 +36,10 @@ s = s(1:num_samples);
 leg_index = leg_index(1:num_samples);
 chi_f = chi_f(1:num_samples);
 kappa = kappa(1:num_samples);
-s_dot = s_dot(1:num_samples);
+omega_d = omega_d(1:num_samples);
+phi_c = phi_c(1:num_samples);
+lambda_phi_hat = lambda_phi_hat(1:num_samples);
+omega_e = omega_e(1:num_samples);
 
 time_vec = get_time_vector(num_samples);
 time_vec = time_vec(1:num_samples);
@@ -116,50 +121,180 @@ legend_handles(end+1) = h_q;
 legend_text{end+1} = 'virtual target q(s)';
 legend(legend_handles, legend_text, 'FontSize', Font_size, 'FontName', Font_name);
 
-figure('Name', 'AFCS System Model Monitor', 'Position', [120 100 1280 820]);
+figure('Name', 'AFCS System Model Monitor', 'Position', [120 100 1800 1200]);
+set(gcf, 'Color', 'w');
 
-subplot(2,2,1);
+% ---- 1. 经纬度轨迹图 ----
+subplot(3,4,1);
 hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
 plot_reference_path_only(flight_plan);
 if has_plane_track
-    plot(plane_lon, plane_lat, 'r-', 'LineWidth', 1.8, 'DisplayName', '飞机轨迹');
+    h_plane = plot(plane_lon, plane_lat, 'r-', 'LineWidth', 1.8);
+else
+    h_plane = [];
 end
-plot(q_lon(1:q_plot_step:end), q_lat(1:q_plot_step:end), 'g^', ...
-    'LineStyle', 'none', 'MarkerSize', 4.5, 'MarkerFaceColor', 'g', ...
-    'DisplayName', '虚拟目标 q(s)');
-xlabel('经度 (deg)');
-ylabel('纬度 (deg)');
-title('经纬度轨迹图');
-legend('Location', 'best');
+h_q = plot(q_lon(1:q_plot_step:end), q_lat(1:q_plot_step:end), 'g^', ...
+    'LineStyle', 'none', 'MarkerSize', 4.5, 'MarkerFaceColor', 'g');
+xlabel('经度 (°)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('纬度 (°)', 'FontSize', Font_size, 'FontName', Font_name);
+title('经纬度轨迹图', 'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
 
-subplot(2,2,2);
+% 手动构建 legend，避免重复条目
+legend_handles = [];
+legend_text = {};
+% 找到第一条蓝色参考线
+h_blue = findobj(gca, 'Type', 'line', 'Color', 'b');
+if ~isempty(h_blue)
+    legend_handles = [legend_handles, h_blue(end)];
+    legend_text{end+1} = '参考路径';
+end
+if has_plane_track && ~isempty(h_plane)
+    legend_handles = [legend_handles, h_plane];
+    legend_text{end+1} = '飞机轨迹';
+end
+legend_handles = [legend_handles, h_q];
+legend_text{end+1} = '虚拟目标 q(s)';
+legend(legend_handles, legend_text, ...
+    'FontSize', Font_size, 'FontName', Font_name, 'Box', 'off');
+
+% ---- 2. 纵向误差 es ----
+subplot(3,4,2);
 hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
 plot(time_vec, es, 'b-', 'LineWidth', 1.5, 'DisplayName', 'es (m)');
+yline(0, 'k--', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+xlabel('时间 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('纵向误差 (m)', 'FontSize', Font_size, 'FontName', Font_name);
+title(sprintf('纵向误差 es  (max=%.3f m)', max(abs(es))), ...
+    'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
+legend('Location', 'best', 'Box', 'off');
+
+% ---- 3. 横向误差 ed ----
+subplot(3,4,3);
+hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
 plot(time_vec, ed, 'r-', 'LineWidth', 1.5, 'DisplayName', 'ed (m)');
-plot(time_vec, echi, 'k-', 'LineWidth', 1.5, 'DisplayName', 'echi (rad)');
-plot(time_vec, s_dot, 'm--', 'LineWidth', 1.2, 'DisplayName', 's\_dot (m/s)');
-xlabel('时间 (s)');
-ylabel('误差 / 变化率');
-title('误差状态');
-legend('Location', 'best');
+yline(0, 'k--', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+xlabel('时间 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('横向误差 (m)', 'FontSize', Font_size, 'FontName', Font_name);
+title(sprintf('横向误差 ed  (max=%.3f m)', max(abs(ed))), ...
+    'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
+legend('Location', 'best', 'Box', 'off');
 
-subplot(2,2,3);
+% ---- 4. 航向误差 echi ----
+subplot(3,4,4);
 hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
+plot(time_vec, echi, 'g-', 'LineWidth', 1.5, 'DisplayName', 'echi (rad)');
+yline(0, 'k--', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+xlabel('时间 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('航向误差 (rad)', 'FontSize', Font_size, 'FontName', Font_name);
+title(sprintf('航向误差 echi  (max=%.4f°)', max(abs(echi)) * 180/pi), ...
+    'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
+legend('Location', 'best', 'Box', 'off');
+
+% ---- 5. 推进速度 s_dot ----
+subplot(3,4,5);
+hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
+plot(time_vec, s_dot, 'm-', 'LineWidth', 1.5, 'DisplayName', 's\_dot (m/s)');
+xlabel('时间 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('速度 (m/s)', 'FontSize', Font_size, 'FontName', Font_name);
+title('虚拟目标推进速度', 'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
+legend('Location', 'best', 'Box', 'off');
+
+% ---- 6. 路径坐标 s ----
+subplot(3,4,6);
+hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
 plot(time_vec, s, 'b-', 'LineWidth', 1.5, 'DisplayName', 's (m)');
-stairs(time_vec, leg_index, 'r-', 'LineWidth', 1.2, 'DisplayName', 'leg index');
-xlabel('时间 (s)');
-ylabel('路径坐标 / 航段');
-title('虚拟目标推进状态');
-legend('Location', 'best');
+xlabel('时间 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('路径坐标 s (m)', 'FontSize', Font_size, 'FontName', Font_name);
+title('虚拟目标推进路径', 'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
+legend('Location', 'best', 'Box', 'off');
 
-subplot(2,2,4);
+% ---- 7. 切向角 chi_f ----
+subplot(3,4,7);
 hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
 plot(time_vec, chi_f, 'b-', 'LineWidth', 1.5, 'DisplayName', 'chi\_f (rad)');
+xlabel('时间 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('路径切向角 (rad)', 'FontSize', Font_size, 'FontName', Font_name);
+title('切向角', 'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
+legend('Location', 'best', 'Box', 'off');
+
+% ---- 8. 路径曲率 kappa ----
+subplot(3,4,8);
+hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
 plot(time_vec, kappa, 'r-', 'LineWidth', 1.5, 'DisplayName', 'kappa (1/m)');
-xlabel('时间 (s)');
-ylabel('几何量');
-title('路径切向角与曲率');
-legend('Location', 'best');
+yline(0, 'k--', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+xlabel('时间 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('曲率 (1/m)', 'FontSize', Font_size, 'FontName', Font_name);
+title('路径曲率', 'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
+legend('Location', 'best', 'Box', 'off');
+
+% ---- 9. 期望航向角速度 omega_d ----
+subplot(3,4,9);
+hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
+plot(time_vec, omega_d, 'c-', 'LineWidth', 1.5, 'DisplayName', 'omega_d (rad/s)');
+yline(0, 'k--', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+xlabel('时间 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('期望航向角速度 (rad/s)', 'FontSize', Font_size, 'FontName', Font_name);
+title(sprintf('期望航向角速度 omega_d (max=%.4f rad/s)', max(abs(omega_d))), ...
+    'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
+legend('Location', 'best', 'Box', 'off');
+
+rad2deg = 180 / pi;
+
+% ---- 10. 滚转指令 phi_c ----
+subplot(3,4,10);
+hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
+plot(time_vec, phi_c * rad2deg, 'm-', 'LineWidth', 1.5, 'DisplayName', 'phi_c (deg)');
+yline(0, 'k--', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+xlabel('时间 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('滚转指令 (°)', 'FontSize', Font_size, 'FontName', Font_name);
+title(sprintf('滚转指令 phi_c (max=%.2f°)', max(abs(phi_c)) * rad2deg), ...
+    'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
+legend('Location', 'best', 'Box', 'off');
+
+% ---- 11. 自适应时间常数估计 lambda ----
+subplot(3,4,11);
+hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
+plot(time_vec, lambda_phi_hat, 'Color', [0 0.6 0.8], 'LineWidth', 1.5, 'DisplayName', 'lambda (s)');
+xlabel('时间 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('时间常数估计 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+title(sprintf('自适应时间常数 lambda (final=%.4f s)', lambda_phi_hat(end)), ...
+    'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
+legend('Location', 'best', 'Box', 'off');
+
+% ---- 12. 航向角速度跟踪误差 omega_e ----
+subplot(3,4,12);
+hold on; grid on;
+set(gca, 'GridAlpha', 0.3, 'GridLineStyle', '--', 'Color', 'w');
+plot(time_vec, omega_e, 'k-', 'LineWidth', 1.5, 'DisplayName', 'omega_e (rad/s)');
+yline(0, 'k--', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+xlabel('时间 (s)', 'FontSize', Font_size, 'FontName', Font_name);
+ylabel('航向角速度误差 (rad/s)', 'FontSize', Font_size, 'FontName', Font_name);
+title(sprintf('航向角速度跟踪误差 omega_e (max=%.4f rad/s)', max(abs(omega_e))), ...
+    'FontSize', Font_size + 1, 'FontName', Font_name);
+set(gca, 'FontSize', Font_size, 'FontName', Font_name);
+legend('Location', 'best', 'Box', 'off');
 
 end
 
@@ -177,10 +312,11 @@ if ~has_plane_track
 end
 end
 
-function [q_lat, q_lon, es, ed, echi, s, leg_index, chi_f, kappa, s_dot] = get_monitor_outputs()
+function [q_lat, q_lon, es, ed, echi, s, leg_index, chi_f, kappa, s_dot, ...
+    omega_d, phi_c, lambda_phi_hat, omega_e] = get_monitor_outputs()
 if base_var_exists('SM_vector')
     raw = evalin('base', 'SM_vector');
-    sm_matrix = convert_monitor_matrix(raw, 10);
+    sm_matrix = convert_monitor_matrix(raw, 14);
 else
     error('plot_afcs_system_model_results:MissingMonitorData', ...
         '基工作区缺少 SM_vector，请先仿真并记录系统模型输出。');
@@ -196,6 +332,10 @@ leg_index = sm_matrix(:,7);
 chi_f = sm_matrix(:,8);
 kappa = sm_matrix(:,9);
 s_dot = sm_matrix(:,10);
+omega_d = sm_matrix(:,11);
+phi_c = sm_matrix(:,12);
+lambda_phi_hat = sm_matrix(:,13);
+omega_e = sm_matrix(:,14);
 end
 
 function time_vec = get_time_vector(num_samples)
