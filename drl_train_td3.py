@@ -241,6 +241,9 @@ def train(args):
     agent = TD3Agent(args)
     buffer = ReplayBuffer(args.buffer_size)
 
+    # 加载 Y-8 真实动力学矩阵
+    load_dynamics()
+
     # 加载 MATLAB 数据（如果有）
     if args.data_file:
         data = load_matlab_data(args.data_file)
@@ -272,13 +275,15 @@ def train(args):
         done = False
         steps = 0
         max_steps = 2000
+        prev_action = None
+        wind_t = 0
 
         while not done and steps < max_steps:
             action = agent.select_action(obs, noise_std)
 
-            # 简化环境 step（Python 端模拟 MATLAB 动力学）
-            next_obs = step_simulation(obs, action)
-            reward = compute_reward_py(next_obs, action)
+            # 简化环境 step（使用 Y-8 真实动力学）
+            next_obs, wind_t = step_simulation(obs, action, wind_t)
+            reward = compute_reward_py(next_obs, action, prev_action)
 
             buffer.push(obs, action, reward, next_obs, float(done))
             agent.train(buffer, args.batch_size)
@@ -286,6 +291,7 @@ def train(args):
             obs = next_obs
             ep_reward += reward
             steps += 1
+            prev_action = action
 
             if abs(obs[4]) > 200:  # ed 过大
                 done = True
@@ -317,47 +323,111 @@ def train(args):
     print("=== 训练完成 ===")
 
 
-def step_simulation(obs, action):
-    """Python 端简化环境 step"""
+# ===================== Y-8 动力学矩阵 =====================
+
+# 全局动力学矩阵（从 .mat 文件加载）
+_A = None
+_B = None
+_F = None
+_V_INF = 80.0
+
+
+def load_dynamics(mat_path='drl_dynamics_matrices.mat'):
+    """从 .mat 文件加载 Y-8 动力学矩阵"""
+    global _A, _B, _F
+    from scipy.io import loadmat
+    data = loadmat(mat_path)
+    _A = data['A']
+    _B = data['B']
+    _F = data['F']
+    print(f"动力学矩阵已加载: A={_A.shape}, B={_B.shape}, F={_F.shape}")
+
+
+def step_simulation(obs, action, wind_t=None, beta_w_override=None):
+    """
+    Python 端环境 step，使用 Y-8 真实动力学矩阵 + RK4 积分
+
+    obs: 8 维观测 [beta, Vy, p, r, ed, es, echi, integral_ed]
+    action: 2 维动作 [delta_ed, delta_echi]
+    wind_t: 当前风场时间（None = 自动递增）
+    beta_w_override: 手动指定 beta_w（用于测试）
+
+    Returns: next_obs, wind_t
+    """
+    global _A, _B, _F
+
+    if _A is None:
+        load_dynamics()
+
+    dt = 0.01
+    V_inf = _V_INF
+
     # 从观测中提取状态
     beta = obs[0]
-    Vy = obs[1]
     p = obs[2]
     r = obs[3]
     ed = obs[4]
     chi = obs[6]
     integral_ed = obs[7]
 
-    # 简化动力学参数
-    dt = 0.01
-    V_inf = 80
+    x = np.array([beta, p, r, chi])  # 状态向量
 
-    # 风场
-    beta_w = 0.0  # 简化：无风场，让 agent 学习从初始扰动中恢复
+    # 风场（1-cos 突风）
+    if beta_w_override is not None:
+        beta_w = beta_w_override
+        if wind_t is None:
+            wind_t = 0
+    else:
+        if wind_t is None:
+            wind_t = 0
+        wind_t += dt
+        if 10.0 <= wind_t <= 20.0:
+            beta_w = 16.0 * (1 - np.cos(2 * np.pi * (wind_t - 10.0) / 10.0)) / 2
+        else:
+            beta_w = 0.0
 
-    # 简化的状态转移
-    beta_dot = -0.1 * beta + 0.01 * p - r + 0.123 * chi + 0.001 * beta_w
-    p_dot = -0.5 * beta - 2.0 * p + 0.5 * r + 5.0 * action[0] * 0.01
-    r_dot = 0.2 * beta + 0.1 * p - 0.8 * r + 2.0 * action[1] * 0.01
+    # 补偿后误差
+    ed_prime = ed + action[0]
+    chi_prime = chi + action[1]
 
-    beta_new = beta + beta_dot * dt
-    p_new = p + p_dot * dt
-    r_new = r + r_dot * dt
-    chi_new = chi + p_new * dt
+    # 简 PD 将误差映射为舵偏（与 MATLAB rollout 一致）
+    delta_a = 0.005 * ed_prime + 0.1 * p
+    delta_r = 0.02 * chi_prime + 0.1 * r
+    delta_a = np.clip(delta_a, -0.5, 0.5)
+    delta_r = np.clip(delta_r, -0.5, 0.5)
+    u = np.array([delta_a, delta_r])
 
-    Vy_new = beta_new * V_inf
-    ed_new = ed + Vy_new * dt
-    integral_ed_new = integral_ed + ed * dt
+    # RK4 推进
+    def x_dot(state, ctrl, w):
+        return _A @ state + _B @ ctrl + _F * w
 
-    next_obs = np.array([beta_new, Vy_new, p_new, r_new,
-                         ed_new, 0.0, chi_new, integral_ed_new], dtype=np.float32)
-    return next_obs
+    k1 = x_dot(x, u, beta_w)
+    k2 = x_dot(x + 0.5 * dt * k1, u, beta_w)
+    k3 = x_dot(x + 0.5 * dt * k2, u, beta_w)
+    k4 = x_dot(x + dt * k3, u, beta_w)
+    x_next = x + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
+
+    # 侧向位移推进
+    Vy_next = x_next[0] * V_inf + beta_w * V_inf * 0.5
+    ed_next = ed + Vy_next * dt
+    integral_ed_next = integral_ed + ed * dt
+
+    next_obs = np.array([x_next[0], Vy_next, x_next[1], x_next[2],
+                         ed_next, 0.0, x_next[3], integral_ed_next], dtype=np.float32)
+
+    return next_obs, wind_t
 
 
-def compute_reward_py(obs, action):
-    """Python 端奖励函数（与 MATLAB drl_full_reward 一致）"""
-    ed_prime = obs[4]
-    chi_prime = obs[6]
+def compute_reward_py(obs, action, prev_action=None):
+    """
+    Python 端奖励函数（与 MATLAB drl_full_reward 一致）
+
+    obs: 当前观测（动作已经应用，obs 中的 ed 和 chi 是补偿前的状态）
+    action: 当前动作 [delta_ed, delta_echi]
+    prev_action: 上一帧动作（用于计算 action derivative 惩罚）
+    """
+    ed_prime = obs[4] + action[0]  # 补偿后 ed
+    chi_prime = obs[6] + action[1]  # 补偿后 chi
     Vy = obs[1]
     p = obs[2]
     r = obs[3]
@@ -376,12 +446,21 @@ def compute_reward_py(obs, action):
     Tf = 20.0
     time_scale = Ts / Tf
 
+    # 奖励项
     reward = (3.0 * piecewise_r(ed_prime)
             + 1.0 * piecewise_r(chi_prime)
             + 0.5 * piecewise_r(Vy)
             + 100 * (-p * p)
-            + 100 * (-r * r)) * time_scale
+            + 100 * (-r * r))
 
+    # Action derivative 惩罚
+    if prev_action is not None:
+        delta_ed_dot = (action[0] - prev_action[0]) / Ts
+        delta_echi_dot = (action[1] - prev_action[1]) / Ts
+        reward += 0.01 * (-delta_ed_dot * delta_ed_dot)
+        reward += 0.4 * (-delta_echi_dot * delta_echi_dot)
+
+    reward *= time_scale
     return reward
 
 
