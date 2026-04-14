@@ -16,6 +16,10 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+# 设备：自动检测 GPU，无则用 CPU
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'使用设备: {device}')
+
 
 # ===================== 网络定义 =====================
 
@@ -104,12 +108,12 @@ class ReplayBuffer:
 
 class TD3Agent:
     def __init__(self, args):
-        self.actor = Actor()
-        self.critic1 = Critic()
-        self.critic2 = Critic()
-        self.target_actor = Actor()
-        self.target_critic1 = Critic()
-        self.target_critic2 = Critic()
+        self.actor = Actor().to(device)
+        self.critic1 = Critic().to(device)
+        self.critic2 = Critic().to(device)
+        self.target_actor = Actor().to(device)
+        self.target_critic1 = Critic().to(device)
+        self.target_critic2 = Critic().to(device)
 
         # 复制权重
         self.target_actor.load_state_dict(self.actor.state_dict())
@@ -130,7 +134,7 @@ class TD3Agent:
         self.action_bias = np.array([0.0, 0.0])
 
     def select_action(self, obs, noise_std):
-        obs_tensor = torch.FloatTensor(obs).unsqueeze(0)
+        obs_tensor = torch.FloatTensor(obs).unsqueeze(0).to(device)
         with torch.no_grad():
             action = self.actor.get_action(obs_tensor, noise_std)
         return action.squeeze(0).numpy()
@@ -140,6 +144,10 @@ class TD3Agent:
             return
 
         obs, act, reward, next_obs, done = buffer.sample(batch_size)
+        obs, act, reward, next_obs, done = (
+            obs.to(device), act.to(device), reward.to(device),
+            next_obs.to(device), done.to(device),
+        )
 
         # === 更新 Critic ===
         with torch.no_grad():
@@ -518,7 +526,7 @@ def compute_reward_py(obs, action, prev_action=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--episodes', type=int, default=1000)
+    parser.add_argument('--episodes', type=int, default=1500)
     parser.add_argument('--actor_lr', type=float, default=1e-5)
     parser.add_argument('--critic1_lr', type=float, default=1e-4)
     parser.add_argument('--critic2_lr', type=float, default=5e-5)
