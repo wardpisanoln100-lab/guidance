@@ -2,7 +2,7 @@ function [delta_ed, delta_echi] = drl_error_compensation(obs, weights_file)
 % drl_error_compensation - DRL 策略推理：8 维观测 -> 2 维补偿
 %
 % 输入:
-%   obs        : 8 维观测 [beta; Vy; p; r; ed; es; echi; integral_ed]
+%   obs        : 8 维观测 [beta; Vy; p; r; ed; echi; phi; integral_ed]
 %   weights_file: 权重 .mat 文件路径，默认 'drl_actor_weights.mat'
 %
 % 输出:

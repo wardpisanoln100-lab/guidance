@@ -1,4 +1,4 @@
-function [delta_ed, delta_echi] = func_DRLCompensationBlock(beta, V_y, p, r, ed, es, echi, integral_ed, drl_enable)
+function [delta_ed, delta_echi] = func_DRLCompensationBlock(beta, V_y, p, r, ed, echi, phi, integral_ed, drl_enable)
 % func_DRLCompensationBlock - Simulink MATLAB Function Block Entry Point
 %
 % DRL-based error compensation wrapper for Y-8 aircraft lateral control.
@@ -10,8 +10,8 @@ function [delta_ed, delta_echi] = func_DRLCompensationBlock(beta, V_y, p, r, ed,
 %   3. p           : Roll rate (rad/s)
 %   4. r           : Yaw rate (rad/s)
 %   5. ed          : S-F lateral error (m)
-%   6. es          : S-F longitudinal error (m)
-%   7. echi        : Heading error (rad)
+%   6. echi        : Heading error (rad)
+%   7. phi         : Roll angle (rad)
 %   8. integral_ed : Integral of ed (m*s)
 %   9. drl_enable  : Switch (1=enabled, 0=disabled)
 %
@@ -28,7 +28,7 @@ delta_ed = 0;
 delta_echi = 0;
 
 if drl_enable
-    obs = [beta; V_y; p; r; ed; es; echi; integral_ed];
+    obs = [beta; V_y; p; r; ed; echi; phi; integral_ed];
     [delta_ed, delta_echi] = drl_error_compensation(obs);
 end
 end

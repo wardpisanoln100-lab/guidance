@@ -23,7 +23,8 @@ assert(abs(dchi) <= pi/6 + 0.01, sprintf('delta_echi 应 <= pi/6，实际 %.4f',
 fprintf('[PASS] 零观测输出在范围内: de=%.4f, dchi=%.4f\n', de, dchi);
 
 % 测试 2: 非零观测
-obs2 = [0.05; 1.0; 0.02; 0.01; 5.0; 0; 0.1; 10.0];
+obs2 = [0.05; 1.0; 0.02; 0.01; 5.0; 0.1; 0.05; 10.0];
+%           ^beta  ^Vy   ^p   ^r   ^ed  ^echi  ^phi  ^int
 [de2, dchi2] = drl_error_compensation(obs2, 'drl_actor_weights_test.mat');
 fprintf('[INFO] 非零观测输出: de=%.4f, dchi=%.4f\n', de2, dchi2);
 
