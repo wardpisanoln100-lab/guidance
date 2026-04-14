@@ -267,7 +267,8 @@ def train(args):
         # 随机初始状态
         obs = np.zeros(8, dtype=np.float32)
         obs[4] = np.random.uniform(-10, 10)  # ed
-        obs[6] = np.random.uniform(-0.2, 0.2)  # echi
+        obs[5] = np.random.uniform(-0.2, 0.2)  # echi
+        obs[6] = np.random.uniform(-0.2, 0.2)  # phi ≈ echi
         obs[0] = 0.01 * np.sign(obs[4] + 1e-8)  # beta
         obs[1] = obs[0] * 80  # Vy
 
@@ -345,10 +346,10 @@ def load_dynamics(mat_path='drl_dynamics_matrices.mat'):
 
 def step_simulation(obs, action, wind_t=None, beta_w_override=None):
     """
-    Python 端环境 step，使用 Y-8 真实动力学矩阵 + RK4 积分
+    Python 端环境 step，使用 Y-8 真实动力学 + 完整 AFCS 控制链
 
-    obs: 8 维观测 [beta, Vy, p, r, ed, es, echi, integral_ed]
-    action: 2 维动作 [delta_ed, delta_echi]
+    obs: 8 维观测 [beta, Vy, p, r, ed, echi, phi, integral_ed]
+    action: 2 维动作 [delta_ed, delta_echi] (DRL 补偿量)
     wind_t: 当前风场时间（None = 自动递增）
     beta_w_override: 手动指定 beta_w（用于测试）
 
@@ -361,18 +362,74 @@ def step_simulation(obs, action, wind_t=None, beta_w_override=None):
 
     dt = 0.01
     V_inf = _V_INF
+    g = 9.81
 
     # 从观测中提取状态
     beta = obs[0]
     p = obs[2]
     r = obs[3]
     ed = obs[4]
-    chi = obs[6]
+    echi = obs[5]
+    phi = obs[6]
     integral_ed = obs[7]
 
-    x = np.array([beta, p, r, chi])  # 状态向量
+    # ==================== 步骤 1: DRL 误差补偿 ====================
+    ed_prime = ed + action[0]
+    echi_prime = echi + action[1]
 
-    # 风场（1-cos 突风）
+    # ==================== 步骤 2: func_KinematicControlLaw ====================
+    # 参数 (来自 system_model_init.m)
+    k = 0.002
+    ks = 0.2
+    k_omega = 0.12
+    gamma_param = 800000
+    chi_inf = np.pi / 2
+
+    es = 0.0  # 纵向误差
+    kappa = 0.0  # 直线路径
+
+    # Eq.5: delta(ed) 进场角
+    z = np.clip(2.0 * k * ed_prime, -60, 60)
+    exp_z = np.exp(z)
+    delta = -chi_inf * (exp_z - 1.0) / (exp_z + 1.0)
+
+    # d(delta)/d(ed)
+    delta_prime = -chi_inf * (4.0 * k * exp_z) / ((exp_z + 1.0) ** 2)
+
+    # Eq.6b: s_dot
+    s_dot = ks * es + V_inf * np.cos(echi_prime)
+
+    # sinc_half: sin(x/2)/(x/2)
+    d_val = echi_prime - delta
+    if abs(d_val) > 1e-8:
+        sinc_term = np.sin(d_val / 2.0) / (d_val / 2.0)
+    else:
+        sinc_term = 1.0 - (d_val ** 2) / 24.0
+
+    # Eq.6a: omega_d
+    omega_d = (-k_omega * (echi_prime - delta)
+               + kappa * s_dot
+               + delta_prime * (V_inf * np.sin(echi_prime) - kappa * es * s_dot)
+               - (ed_prime * V_inf / gamma_param) * sinc_term * np.cos((echi_prime + delta) / 2.0))
+
+    # ==================== 步骤 3: omega_d → phi_g ====================
+    phi_d = np.arctan(V_inf * omega_d / g)
+    phi_g = np.clip(phi_d, -np.pi / 6, np.pi / 6)
+
+    # ==================== 步骤 4: Roll_modify → 舵偏 ====================
+    # phi 经过饱和（与 Simulink 一致：saturate(phi)）
+    phi_sat = np.clip(phi, -np.pi / 6, np.pi / 6)
+
+    delta_a = (phi_g - phi_sat) + p
+    delta_r = -0.019 * phi_sat - 0.03 * r
+
+    # 舵偏限幅（±30° = ±0.5236 rad）
+    delta_a = np.clip(delta_a, -0.5236, 0.5236)
+    delta_r = np.clip(delta_r, -0.5236, 0.5236)
+
+    u = np.array([delta_a, delta_r])
+
+    # ==================== 步骤 5: 风场 ====================
     if beta_w_override is not None:
         beta_w = beta_w_override
         if wind_t is None:
@@ -386,18 +443,9 @@ def step_simulation(obs, action, wind_t=None, beta_w_override=None):
         else:
             beta_w = 0.0
 
-    # 补偿后误差
-    ed_prime = ed + action[0]
-    chi_prime = chi + action[1]
+    # ==================== 步骤 6: RK4 动力学推进 ====================
+    x = np.array([beta, p, r, phi])
 
-    # 简 PD 将误差映射为舵偏（与 MATLAB rollout 一致）
-    delta_a = 0.005 * ed_prime + 0.1 * p
-    delta_r = 0.02 * chi_prime + 0.1 * r
-    delta_a = np.clip(delta_a, -0.5, 0.5)
-    delta_r = np.clip(delta_r, -0.5, 0.5)
-    u = np.array([delta_a, delta_r])
-
-    # RK4 推进
     def x_dot(state, ctrl, w):
         return _A @ state + _B @ ctrl + _F * w
 
@@ -412,8 +460,10 @@ def step_simulation(obs, action, wind_t=None, beta_w_override=None):
     ed_next = ed + Vy_next * dt
     integral_ed_next = integral_ed + ed * dt
 
+    # next_obs: [beta, Vy, p, r, ed, echi, phi, integral_ed]
+    # echi ≈ phi (小角度近似)
     next_obs = np.array([x_next[0], Vy_next, x_next[1], x_next[2],
-                         ed_next, 0.0, x_next[3], integral_ed_next], dtype=np.float32)
+                         ed_next, x_next[3], x_next[3], integral_ed_next], dtype=np.float32)
 
     return next_obs, wind_t
 
@@ -427,7 +477,7 @@ def compute_reward_py(obs, action, prev_action=None):
     prev_action: 上一帧动作（用于计算 action derivative 惩罚）
     """
     ed_prime = obs[4] + action[0]  # 补偿后 ed
-    chi_prime = obs[6] + action[1]  # 补偿后 chi
+    chi_prime = obs[5] + action[1]  # 补偿后 echi (was obs[6])
     Vy = obs[1]
     p = obs[2]
     r = obs[3]
@@ -477,7 +527,7 @@ if __name__ == '__main__':
     parser.add_argument('--actor_delay', type=int, default=2)
     parser.add_argument('--noise_std', type=float, default=0.1)
     parser.add_argument('--noise_decay', type=float, default=0.05)
-    parser.add_argument('--policy_noise', type=float, default=0.2)
+    parser.add_argument('--policy_noise', type=float, default=0.1)
     parser.add_argument('--noise_clip', type=float, default=0.5)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--buffer_size', type=int, default=int(1e6))
