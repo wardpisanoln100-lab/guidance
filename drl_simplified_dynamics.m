@@ -1,80 +1,56 @@
 function [A, B, F, C, G] = drl_simplified_dynamics()
-% drl_simplified_dynamics - 横航向小扰动线性模型（论文公式 12）
-%
-% x' = A*x + B*u + F*beta_w
-% y  = C*x + G*beta_w
-%
-% 状态: x = [beta, p, r, phi]^T
-% 输入: u = [delta_a, delta_r]^T
-% 扰动: beta_w = 风场引起的侧滑角
+% drl_simplified_dynamics - 横航向小扰动线性模型
+% A、B 通过 Simulink 配平加线性化获得
+% C = eye(4)，表示状态直接输出
+% F 暂时保留为与旧接口兼容的近似定义 F = A(:,1)
 
-% Y-8 飞行条件
-V_inf = 80;          % 进场速度 (m/s)
-mass = 54000;        % 质量 (kg)
-S = 160;             % 参考面积 (m^2)
-b = 42.4;            % 翼展 (m)
-rho = 1.05;          % 高原密度 (kg/m^3)
-I_x = 900000;        % 滚转惯量 (kg*m^2)
-I_z = 2350000;       % 偏航惯量 (kg*m^2)
-I_xz = 18000;        % 惯性积 (kg*m^2)
+cd('d:/桌面/615_items/y8模型/y8ModelAllControl');
 
-Gamma = I_x * I_z - I_xz^2;
-Lambda1 = I_z / Gamma;
-Lambda2 = I_x / Gamma;
+% 与 Start.m 保持一致的工况
+mass = 54000;
+Vt = 80;
+alt = 1284.73;
 
-q_bar = 0.5 * rho * V_inf^2;
-b_2V = b / (2 * V_inf);
+% 将工况变量显式送入 base workspace，
+% 以便 AircraftTrim 内部调用 sim(...) 时能正确读取 mass、X、Y 等变量
+assignin('base', 'mass', mass);
+assignin('base', 'Vt', Vt);
+assignin('base', 'alt', alt);
 
-% 气动导数（无量纲，参考 Y-8 气动特性）
-Y_beta = -0.405;
-Y_p = -0.093;
-Y_r = 0.290;
-Y_delta_r = 0.229;
+% 在 base workspace 中执行 AircraftTrim。
+% AircraftTrim 是脚本，其中会继续调用 Inertia_Calculate_54 等模型，
+% 这些模型块参数默认从 base workspace 取值
+evalin('base', 'AircraftTrim;');
+op = evalin('base', 'op');
 
-l_beta = -0.079;
-l_p = -0.644;
-l_r = 0.168;
-l_delta_a = -0.290;
-l_delta_r = 0.0017;
+% 线性化
+modelname = 'Aero_Dynamics';
+i = 1;
+io(i) = linio([modelname, '/delta_a'], 1, 'in'); i = i + 1;
+io(i) = linio([modelname, '/delta_e'], 1, 'in'); i = i + 1;
+io(i) = linio([modelname, '/delta_r'], 1, 'in'); i = i + 1;
+io(i) = linio([modelname, '/delta_p'], 1, 'in'); i = i + 1;
+for k = 1:12
+    io(i) = linio([modelname, '/U1'], k, 'out');
+    i = i + 1;
+end
 
-n_beta = 0.067;
-n_p = -0.057;
-n_r = -0.109;
-n_delta_a = -0.075;
-n_delta_r = -0.017;
+sys = linearize(modelname, op, io);
 
-% A 矩阵
-A = zeros(4);
-A(1,1) = (q_bar * S / (mass * V_inf)) * Y_beta;
-A(1,2) = (q_bar * S / (mass * V_inf)) * Y_p * b_2V;
-A(1,3) = (q_bar * S / (mass * V_inf)) * Y_r * b_2V - 1;
-A(1,4) = 9.81 / V_inf;
+A_full = sys.A;
+B_full = sys.B;
 
-A(2,1) = Lambda1 * q_bar * S * b * l_beta;
-A(2,2) = Lambda1 * q_bar * S * b * l_p * b_2V;
-A(2,3) = Lambda1 * q_bar * S * b * l_r * b_2V;
+% 横侧向子系统：状态 [Beta, p, r, phi]，输入 [delta_a, delta_r]
+A_lat = A_full([3 4 6 7], [3 4 6 7]);
+B_lat = B_full([3 4 6 7], [1 3]);
 
-A(3,1) = Lambda2 * q_bar * S * b * n_beta;
-A(3,2) = Lambda2 * q_bar * S * b * n_p * b_2V;
-A(3,3) = Lambda2 * q_bar * S * b * n_r * b_2V;
+A = A_lat;
+B = B_lat;
 
-A(4,2) = 1;
+% C = 单位阵，G = 零向量
+C = eye(4);
+G = zeros(4, 1);
 
-% B 矩阵
-B = zeros(4, 2);
-B(1,2) = (q_bar * S / (mass * V_inf)) * Y_delta_r;
-B(2,1) = Lambda1 * q_bar * S * b * l_delta_a;
-B(2,2) = Lambda1 * q_bar * S * b * l_delta_r;
-B(3,1) = Lambda2 * q_bar * S * b * n_delta_a;
-B(3,2) = Lambda2 * q_bar * S * b * n_delta_r;
-
-% F 矩阵（论文公式 13: F = A(:,1)）
+% 为保持旧接口兼容，暂时继续保留近似定义
 F = A(:, 1);
-
-% C, G 矩阵（输出: ed 和 echi）
-C = zeros(2, 4);
-C(1, 1) = 1;  % beta 近似 ed 变化
-C(2, 4) = 1;  % phi 近似 echi
-
-G = zeros(2, 1);
 end
